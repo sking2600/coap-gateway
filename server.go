@@ -1,8 +1,14 @@
 package main
 
 import (
+	"bytes"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
+	"io/ioutil"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -47,20 +53,124 @@ func NewSession(server *Server, client coap.Session) *Session {
 
 //Server a configuration of coapgateway
 type Server struct {
-	// Address to listen on, ":COAP" if empty.
-	Addr string
-	// if "tcp" or "tcp-tls" (COAP over TLS) it will invoke a TCP listener, otherwise an UDP one
-	Net string
-	// the duration in seconds between two keepalive transmissions in idle condition. TCP keepalive period is required to be configurable and by default is set to 1 hour.
-	keepaliveTime time.Duration
-	// the duration in seconds between two successive keepalive retransmissions, if acknowledgement to the previous keepalive transmission is not received.
-	keepaliveInterval time.Duration
-	// the number of retransmissions to be carried out before declaring that remote end is not available.
-	keepaliveRetry int
+	Addr              string        // Address to listen on, ":COAP" if empty.
+	Net               string        // if "tcp" or "tcp-tls" (COAP over TLS) it will invoke a TCP listener, otherwise an UDP one
+	TLSConfig         *tls.Config   // TLS connection configuration
+	keepaliveTime     time.Duration // the duration in seconds between two keepalive transmissions in idle condition. TCP keepalive period is required to be configurable and by default is set to 1 hour.
+	keepaliveInterval time.Duration // the duration in seconds between two successive keepalive retransmissions, if acknowledgement to the previous keepalive transmission is not received.
+	keepaliveRetry    int           // the number of retransmissions to be carried out before declaring that remote end is not available.
+}
+
+func setupTLS() (*tls.Config, error) {
+	var tlsCertificate *string
+	var tlsCertificateKey *string
+	var tlsCAPool *string
+	for _, e := range os.Environ() {
+		pair := strings.Split(e, "=")
+		key := pair[0]
+		switch key {
+		case envTLSCertificate:
+			tlsCertificate = &pair[1]
+		case envTLSCertificateKey:
+			tlsCertificateKey = &pair[1]
+		case envTLSCAPool:
+			tlsCAPool = &pair[1]
+		}
+	}
+	if tlsCertificate == nil {
+		return nil, ErrEnvNotSet(envTLSCertificate)
+	}
+	if tlsCertificateKey == nil {
+		return nil, ErrEnvNotSet(envTLSCertificateKey)
+	}
+	if tlsCAPool == nil {
+		return nil, ErrEnvNotSet(envTLSCAPool)
+	}
+	cert, err := tls.LoadX509KeyPair(*tlsCertificate, *tlsCertificateKey)
+	if err != nil {
+		return nil, err
+	}
+
+	caRootPool := x509.NewCertPool()
+	caIntermediatesPool := x509.NewCertPool()
+
+	err = filepath.Walk(*tlsCAPool, func(path string, info os.FileInfo, e error) error {
+		if e != nil {
+			return e
+		}
+
+		// check if it is a regular file (not dir)
+		if info.Mode().IsRegular() {
+			certPEMBlock, err := ioutil.ReadFile(path)
+			if err != nil {
+				log.Printf("Cannot read file '%v': %v", path, err)
+				return nil
+			}
+			certDERBlock, _ := pem.Decode(certPEMBlock)
+			if certDERBlock == nil {
+				log.Printf("Cannot decode der block '%v'", path)
+				return nil
+			}
+			if certDERBlock.Type != "CERTIFICATE" {
+				log.Printf("DER block is not certificate '%v'", path)
+				return nil
+			}
+			caCert, err := x509.ParseCertificate(certDERBlock.Bytes)
+			if err != nil {
+				log.Printf("Cannot parse certificate '%v': %v", path, err)
+				return nil
+			}
+			if bytes.Compare(caCert.RawIssuer, caCert.RawSubject) == 0 && caCert.IsCA {
+				log.Printf("Adding root certificate '%v'", path)
+				caRootPool.AddCert(caCert)
+			} else if caCert.IsCA {
+				log.Printf("Adding intermediate certificate '%v'", path)
+				caIntermediatesPool.AddCert(caCert)
+			} else {
+				log.Printf("Ignoring certificate '%v'", path)
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	if len(caRootPool.Subjects()) == 0 {
+		return nil, ErrEmptyCARootPool
+	}
+
+	return &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		ClientAuth:   tls.RequireAnyClientCert,
+		VerifyPeerCertificate: func(rawCerts [][]byte, verifyChains [][]*x509.Certificate) error {
+			for _, rawCert := range rawCerts {
+				cert, err := x509.ParseCertificates(rawCert)
+				if err != nil {
+					return err
+				}
+				//TODO verify revocation
+				for _, c := range cert {
+					_, err := c.Verify(x509.VerifyOptions{
+						Intermediates: caIntermediatesPool,
+						Roots:         caRootPool,
+						CurrentTime:   time.Now(),
+						KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
+					})
+					if err != nil {
+						return err
+					}
+				}
+				//TODO verify EKU - need to use ASN decoding
+			}
+			return nil
+		},
+	}, nil
 }
 
 //NewServer setup coap gateway
-func NewServer() *Server {
+func NewServer() (*Server, error) {
 	s := &Server{keepaliveTime: time.Hour, keepaliveInterval: time.Second * 5, keepaliveRetry: 5, Net: "tcp", Addr: "0.0.0.0:5684"}
 
 	//load env variables
@@ -108,7 +218,15 @@ func NewServer() *Server {
 	if keepaliveRetry != nil {
 		s.keepaliveRetry = *keepaliveRetry
 	}
-	return s
+	if strings.Contains(s.Net, "tls") {
+		var err error
+		s.TLSConfig, err = setupTLS()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return s, nil
 }
 
 //NewCoapServer setup coap server
@@ -117,9 +235,10 @@ func (server *Server) NewCoapServer() *coap.Server {
 	mux.DefaultHandle(coap.HandlerFunc(DefaultHandler))
 
 	return &coap.Server{
-		Net:     server.Net,
-		Addr:    server.Addr,
-		Handler: mux,
+		Net:       server.Net,
+		Addr:      server.Addr,
+		TLSConfig: server.TLSConfig,
+		Handler:   mux,
 		NotifySessionNewFunc: func(s coap.Session) {
 			clientContainer.addSession(server, s)
 		},
@@ -131,6 +250,5 @@ func (server *Server) NewCoapServer() *coap.Server {
 
 //ListenAndServe starts a coapgateway on the configured address in *Server.
 func (server *Server) ListenAndServe() error {
-
 	return server.NewCoapServer().ListenAndServe()
 }
