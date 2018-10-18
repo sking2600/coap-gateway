@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"log"
-	"time"
 
 	"github.com/go-ocf/go-coap"
 	"github.com/ugorji/go/codec"
@@ -29,26 +28,17 @@ func decodeMsg(resp coap.Message, tag string) {
 	}
 }
 
-func sendReply(s coap.Session, req coap.Message) {
-	resType := coap.NonConfirmable
-	if req.IsConfirmable() {
-		resType = coap.Acknowledgement
-	}
-	response := s.NewMessage(coap.MessageParams{
-		Type:      resType,
-		Code:      coap.NotFound,
-		MessageID: req.MessageID(),
-		Token:     req.Token(),
-	})
-	err := s.WriteMsg(response, time.Hour)
+func sendReply(s coap.ResponseWriter, req *coap.Request) {
+	s.SetCode(coap.NotFound)
+	_, err := s.Write(nil)
 	if err != nil {
-		log.Printf("Cannot send reply to %v: %v", s.RemoteAddr(), err)
+		log.Printf("Cannot send reply to %v: %v", req.Client.RemoteAddr(), err)
 	}
 }
 
 //DefaultHandler default handler for requests
-func DefaultHandler(s coap.Session, req coap.Message) {
+func DefaultHandler(s coap.ResponseWriter, req *coap.Request) {
 	// handle message from tcp-client
-	decodeMsg(req, "REQUEST-CLIENT")
+	decodeMsg(req.Msg, "REQUEST-CLIENT")
 	sendReply(s, req)
 }

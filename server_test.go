@@ -73,19 +73,8 @@ func TestSimpleServer(t *testing.T) {
 	}
 	defer co.Close()
 
-	token, err := coap.GenerateToken(8)
-	if err != nil {
-		t.Fatalf("cannot create token: %v", err)
-	}
+	resp, err := co.Get("/test")
 
-	req := co.NewMessage(coap.MessageParams{
-		Type:  coap.NonConfirmable,
-		Code:  coap.GET,
-		Token: token,
-	})
-	req.SetPathString("/test")
-
-	resp, err := co.Exchange(req, time.Second)
 	if err != nil {
 		t.Fatalf("cannot exchange messages: %v", err)
 	}
@@ -222,19 +211,8 @@ func TestSimpleTLSServer(t *testing.T) {
 	}
 	defer co.Close()
 
-	token, err := coap.GenerateToken(8)
-	if err != nil {
-		t.Fatalf("cannot create token: %v", err)
-	}
+	resp, err := co.Get("/test")
 
-	req := co.NewMessage(coap.MessageParams{
-		Type:  coap.NonConfirmable,
-		Code:  coap.GET,
-		Token: token,
-	})
-	req.SetPathString("/test")
-
-	resp, err := co.Exchange(req, time.Second)
 	if err != nil {
 		t.Fatalf("cannot exchange messages: %v", err)
 	}

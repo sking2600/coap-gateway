@@ -20,7 +20,7 @@ import (
 //Session a setup of connection
 type Session struct {
 	server    *Server
-	client    coap.Session
+	client    *coap.ClientCommander
 	keepalive *Keepalive
 }
 
@@ -29,13 +29,13 @@ type ClientContainer struct {
 	mutex    sync.Mutex
 }
 
-func (c *ClientContainer) addSession(server *Server, client coap.Session) {
+func (c *ClientContainer) addSession(server *Server, client *coap.ClientCommander) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	c.sessions[client.LocalAddr().String()] = NewSession(server, client)
 }
 
-func (c *ClientContainer) removeSession(s coap.Session) {
+func (c *ClientContainer) removeSession(s *coap.ClientCommander) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	c.sessions[s.LocalAddr().String()].keepalive.Done()
@@ -47,7 +47,7 @@ var (
 )
 
 //NewSession create and initialize session
-func NewSession(server *Server, client coap.Session) *Session {
+func NewSession(server *Server, client *coap.ClientCommander) *Session {
 	return &Session{server: server, client: client, keepalive: NewKeepalive(server, client)}
 }
 
@@ -239,10 +239,10 @@ func (server *Server) NewCoapServer() *coap.Server {
 		Addr:      server.Addr,
 		TLSConfig: server.TLSConfig,
 		Handler:   mux,
-		NotifySessionNewFunc: func(s coap.Session) {
+		NotifySessionNewFunc: func(s *coap.ClientCommander) {
 			clientContainer.addSession(server, s)
 		},
-		NotifySessionEndFunc: func(s coap.Session, err error) {
+		NotifySessionEndFunc: func(s *coap.ClientCommander, err error) {
 			clientContainer.removeSession(s)
 		},
 	}

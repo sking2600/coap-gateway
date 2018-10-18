@@ -9,10 +9,10 @@ import (
 
 //Keepalive setup of keepalive
 type Keepalive struct {
-	time              time.Duration
-	interval          time.Duration
-	retry             int
-	connectionSession coap.Session
+	time     time.Duration
+	interval time.Duration
+	retry    int
+	client   *coap.ClientCommander
 
 	doneChan chan interface{}
 }
@@ -25,8 +25,8 @@ func (k *Keepalive) Done() {
 
 //Terminate terminate connection by keepalive
 func (k *Keepalive) Terminate() {
-	log.Printf("Terminate connection %v by keepalive %v", k.connectionSession.RemoteAddr(), k)
-	k.connectionSession.Close()
+	log.Printf("Terminate connection %v by keepalive %v", k.client.RemoteAddr(), k)
+	k.client.Close()
 }
 
 func (k *Keepalive) run() {
@@ -40,8 +40,8 @@ func (k *Keepalive) run() {
 		case <-k.doneChan:
 			return
 		case <-time.After(time.Second * waitTime):
-			if err := k.connectionSession.Ping(time.Second); err != nil {
-				log.Printf("Cannot send PING to %v: %v", k.connectionSession.RemoteAddr(), err)
+			if err := k.client.Ping(time.Second); err != nil {
+				log.Printf("Cannot send PING to %v: %v", k.client.RemoteAddr(), err)
 				if err == coap.ErrTimeout {
 					timeoutCount++
 					if timeoutCount >= k.retry {
@@ -60,13 +60,13 @@ func (k *Keepalive) run() {
 }
 
 //NewKeepalive create new Keepalive instance and start check of connection
-func NewKeepalive(server *Server, connectionSession coap.Session) *Keepalive {
+func NewKeepalive(server *Server, client *coap.ClientCommander) *Keepalive {
 	k := &Keepalive{
-		time:              server.keepaliveTime,
-		interval:          server.keepaliveInterval,
-		retry:             server.keepaliveRetry,
-		connectionSession: connectionSession,
-		doneChan:          make(chan interface{}, 1),
+		time:     server.keepaliveTime,
+		interval: server.keepaliveInterval,
+		retry:    server.keepaliveRetry,
+		client:   client,
+		doneChan: make(chan interface{}, 1),
 	}
 	go k.run()
 	return k
