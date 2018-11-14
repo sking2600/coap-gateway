@@ -1,7 +1,6 @@
 package main
 
 import (
-	"log"
 	"time"
 
 	"github.com/go-ocf/go-coap"
@@ -25,7 +24,7 @@ func (k *Keepalive) Done() {
 
 //Terminate terminate connection by keepalive
 func (k *Keepalive) Terminate() {
-	log.Printf("Terminate connection %v by keepalive %v", k.client.RemoteAddr(), k)
+	log.Infof("Terminate connection %v by keepalive %v", k.client.RemoteAddr(), k)
 	k.client.Close()
 }
 
@@ -41,7 +40,7 @@ func (k *Keepalive) run() {
 			return
 		case <-time.After(time.Second * waitTime):
 			if err := k.client.Ping(time.Second); err != nil {
-				log.Printf("Cannot send PING to %v: %v", k.client.RemoteAddr(), err)
+				log.Errorf("Cannot send PING to %v: %v", k.client.RemoteAddr(), err)
 				if err == coap.ErrTimeout {
 					timeoutCount++
 					if timeoutCount >= k.retry {
