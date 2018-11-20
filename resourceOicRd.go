@@ -39,6 +39,33 @@ func sendResponse(s coap.ResponseWriter, client *coap.ClientCommander, code coap
 	}
 }
 
+func processLink(l interface{}, session *Session, deviceID string) (link map[interface{}]interface{}, err error) {
+	link, ok := l.(map[interface{}]interface{})
+	if !ok {
+		err = fmt.Errorf("Unsupporterd type of link")
+		return
+	}
+	obs := false
+	if p, ok := link["p"].(map[interface{}]interface{}); ok {
+		if bm, ok := p["bm"].(uint64); ok {
+			if bm&observable == observable {
+				obs = true
+			}
+		}
+	}
+	if href, ok := link["href"].(string); ok {
+		ins, err := session.publishResource(deviceID, href, obs)
+		if err != nil {
+			err = fmt.Errorf("Cannot publish resource: %v", err)
+			return link, err
+		}
+		link[href] = ins
+		return link, err
+	}
+	err = fmt.Errorf("Cannot find href in link")
+	return
+}
+
 func oicRdPostHandler(s coap.ResponseWriter, req *coap.Request) {
 	wkRd, err := parsePostPayload(req.Msg)
 
@@ -57,27 +84,13 @@ func oicRdPostHandler(s coap.ResponseWriter, req *coap.Request) {
 	newLinks := make([]interface{}, 0, len(links))
 	deviceID := wkRd["di"].(string)
 	for i := range links {
-		link := links[i].(map[interface{}]interface{})
-		obs := false
-		if p, ok := link["p"].(map[interface{}]interface{}); ok {
-			if bm, ok := p["bm"].(uint64); ok {
-				if bm&observable == observable {
-					obs = true
-				}
-			}
-		}
-		if href, ok := link["href"].(string); ok {
-			ins, err := session.publishResource(deviceID, href, obs)
-			if err != nil {
-				log.Errorf("Cannot publish resource: %v", err)
-			} else {
-				link["ins"] = ins
-				newLinks = append(links, link)
-			}
-		} else {
-			log.Errorf("Cannot find href in link for client %v", req.Client.RemoteAddr())
+		link, err := processLink(links[i], session, deviceID)
+		if err != nil {
+			log.Errorf("Cannot process link from %v: %v", req.Client.RemoteAddr(), err)
 			sendResponse(s, req.Client, coap.BadRequest, nil)
+			return
 		}
+		newLinks = append(newLinks, link)
 	}
 	wkRd["links"] = newLinks
 
