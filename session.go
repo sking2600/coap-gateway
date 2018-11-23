@@ -111,7 +111,11 @@ func (session *Session) unpublishResource(deviceID string, publishedResourcesIDs
 		if len(publishedResourcesIDs) == 0 {
 			return nil
 		}
-		return fmt.Errorf("Cannot unpublish resources with %v: resource not found", reflect.ValueOf(publishedResourcesIDs).MapKeys())
+		out := make([]int, 0, len(publishedResourcesIDs))
+		for _, val := range reflect.ValueOf(publishedResourcesIDs).MapKeys() {
+			out = append(out, val.Interface().(int))
+		}
+		return fmt.Errorf("Cannot unpublish resources with %v: resource not found", out)
 	}
 	return fmt.Errorf("Cannot unpublish resource for %v: device not found", deviceID)
 

@@ -11,7 +11,7 @@ import (
 
 const observable = 2
 
-var oicrd = "oic/rd"
+var oicRd = "oic/rd"
 
 func parsePostPayload(msg coap.Message) (wkRd map[string]interface{}, err error) {
 	err = codec.NewDecoderBytes(msg.Payload(), new(codec.CborHandle)).Decode(&wkRd)

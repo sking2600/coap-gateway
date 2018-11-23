@@ -213,13 +213,13 @@ func (server *Server) NewCoapServer() *coap.Server {
 	mux.DefaultHandle(coap.HandlerFunc(func(s coap.ResponseWriter, req *coap.Request) {
 		validateCommandCode(s, req, server, defaultHandler)
 	}))
-	mux.Handle(oicrd, coap.HandlerFunc(func(s coap.ResponseWriter, req *coap.Request) {
+	mux.Handle(oicRd, coap.HandlerFunc(func(s coap.ResponseWriter, req *coap.Request) {
 		validateCommandCode(s, req, server, oicRdHandler)
 	}))
-	mux.Handle("/oic/sec/account", coap.HandlerFunc(func(s coap.ResponseWriter, req *coap.Request) {
+	mux.Handle(oicSecAccount, coap.HandlerFunc(func(s coap.ResponseWriter, req *coap.Request) {
 		validateCommandCode(s, req, server, oicSecAccountHandler)
 	}))
-	mux.Handle("oic/sec/session", coap.HandlerFunc(func(s coap.ResponseWriter, req *coap.Request) {
+	mux.Handle(oicSecSession, coap.HandlerFunc(func(s coap.ResponseWriter, req *coap.Request) {
 		validateCommandCode(s, req, server, oicSecSessionHandler)
 	}))
 
