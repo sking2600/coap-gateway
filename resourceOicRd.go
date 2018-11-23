@@ -11,6 +11,8 @@ import (
 
 const observable = 2
 
+var oicrd = "oic/rd"
+
 func parsePostPayload(msg coap.Message) (wkRd map[string]interface{}, err error) {
 	err = codec.NewDecoderBytes(msg.Payload(), new(codec.CborHandle)).Decode(&wkRd)
 	if err != nil {
@@ -53,20 +55,20 @@ func processLink(l interface{}, session *Session, deviceID string) (link map[int
 			}
 		}
 	}
-	if href, ok := link["href"].(string); ok {
+	if href, ok := link["href"].(string); ok && len(href) > 0 {
 		ins, err := session.publishResource(deviceID, href, obs)
 		if err != nil {
 			err = fmt.Errorf("Cannot publish resource: %v", err)
 			return link, err
 		}
-		link[href] = ins
+		link["ins"] = ins
 		return link, err
 	}
 	err = fmt.Errorf("Cannot find href in link")
 	return
 }
 
-func oicRdPostHandler(s coap.ResponseWriter, req *coap.Request) {
+func oicRdPostHandler(s coap.ResponseWriter, req *coap.Request, server *Server) {
 	wkRd, err := parsePostPayload(req.Msg)
 
 	if err != nil {
@@ -74,7 +76,7 @@ func oicRdPostHandler(s coap.ResponseWriter, req *coap.Request) {
 		sendResponse(s, req.Client, coap.BadRequest, nil)
 		return
 	}
-	session := clientContainer.find(req.Client.RemoteAddr().String())
+	session := server.clientContainer.find(req.Client.RemoteAddr().String())
 	if session == nil {
 		log.Errorf("Cannot find session for client %v", req.Client.RemoteAddr())
 		sendResponse(s, req.Client, coap.InternalServerError, nil)
@@ -104,8 +106,8 @@ func oicRdPostHandler(s coap.ResponseWriter, req *coap.Request) {
 	sendResponse(s, req.Client, coap.Changed, out)
 }
 
-func oicRdDeleteHandler(s coap.ResponseWriter, req *coap.Request) {
-	session := clientContainer.find(req.Client.RemoteAddr().String())
+func oicRdDeleteHandler(s coap.ResponseWriter, req *coap.Request, server *Server) {
+	session := server.clientContainer.find(req.Client.RemoteAddr().String())
 	if session == nil {
 		log.Errorf("Cannot find session for client %v", req.Client.RemoteAddr())
 		sendResponse(s, req.Client, coap.InternalServerError, nil)
@@ -134,17 +136,19 @@ func oicRdDeleteHandler(s coap.ResponseWriter, req *coap.Request) {
 	err := session.unpublishResource(deviceID, inss)
 	if err != nil {
 		log.Errorf("%v", err)
+		sendResponse(s, req.Client, coap.BadRequest, nil)
+		return
 	}
 
 	sendResponse(s, req.Client, coap.Deleted, nil)
 }
 
-func oicRdHandler(s coap.ResponseWriter, req *coap.Request) {
+func oicRdHandler(s coap.ResponseWriter, req *coap.Request, server *Server) {
 	switch req.Msg.Code() {
 	case coap.POST:
-		oicRdPostHandler(s, req)
+		oicRdPostHandler(s, req, server)
 	case coap.DELETE:
-		oicRdDeleteHandler(s, req)
+		oicRdDeleteHandler(s, req, server)
 	default:
 		log.Errorf("Forbidden request from %v", req.Client.RemoteAddr())
 		sendResponse(s, req.Client, coap.Forbidden, nil)

@@ -23,6 +23,8 @@ type Server struct {
 	keepaliveTime     time.Duration // the duration in seconds between two keepalive transmissions in idle condition. TCP keepalive period is required to be configurable and by default is set to 1 hour.
 	keepaliveInterval time.Duration // the duration in seconds between two successive keepalive retransmissions, if acknowledgement to the previous keepalive transmission is not received.
 	keepaliveRetry    int           // the number of retransmissions to be carried out before declaring that remote end is not available.
+
+	clientContainer *ClientContainer
 }
 
 func setupTLS() (*tls.Config, error) {
@@ -85,13 +87,13 @@ func setupTLS() (*tls.Config, error) {
 				return nil
 			}
 			if bytes.Compare(caCert.RawIssuer, caCert.RawSubject) == 0 && caCert.IsCA {
-				log.Errorf("Adding root certificate '%v'", path)
+				log.Infof("Adding root certificate '%v'", path)
 				caRootPool.AddCert(caCert)
 			} else if caCert.IsCA {
-				log.Errorf("Adding intermediate certificate '%v'", path)
+				log.Infof("Adding intermediate certificate '%v'", path)
 				caIntermediatesPool.AddCert(caCert)
 			} else {
-				log.Errorf("Ignoring certificate '%v'", path)
+				log.Warnf("Ignoring certificate '%v'", path)
 			}
 		}
 		return nil
@@ -135,7 +137,7 @@ func setupTLS() (*tls.Config, error) {
 
 //NewServer setup coap gateway
 func NewServer() (*Server, error) {
-	s := &Server{keepaliveTime: time.Hour, keepaliveInterval: time.Second * 5, keepaliveRetry: 5, Net: "tcp", Addr: "0.0.0.0:5684"}
+	s := Server{keepaliveTime: time.Hour, keepaliveInterval: time.Second * 5, keepaliveRetry: 5, Net: "tcp", Addr: "0.0.0.0:5684", clientContainer: &ClientContainer{sessions: make(map[string]*Session)}}
 
 	//load env variables
 	var keepaliveTime *int
@@ -190,14 +192,14 @@ func NewServer() (*Server, error) {
 		}
 	}
 
-	return s, nil
+	return &s, nil
 }
 
-func validateCommandCode(s coap.ResponseWriter, req *coap.Request, fnc func(s coap.ResponseWriter, req *coap.Request)) {
+func validateCommandCode(s coap.ResponseWriter, req *coap.Request, server *Server, fnc func(s coap.ResponseWriter, req *coap.Request, server *Server)) {
 	decodeMsgToDebug(req.Msg, "MESSAGE_FROM_CLIENT")
 	switch req.Msg.Code() {
 	case coap.POST, coap.DELETE, coap.PUT, coap.GET:
-		fnc(s, req)
+		fnc(s, req, server)
 	case coap.Content:
 		log.Infof("Unpaired message received from %v", req.Client.RemoteAddr())
 	default:
@@ -209,16 +211,16 @@ func validateCommandCode(s coap.ResponseWriter, req *coap.Request, fnc func(s co
 func (server *Server) NewCoapServer() *coap.Server {
 	mux := coap.NewServeMux()
 	mux.DefaultHandle(coap.HandlerFunc(func(s coap.ResponseWriter, req *coap.Request) {
-		validateCommandCode(s, req, defaultHandler)
+		validateCommandCode(s, req, server, defaultHandler)
 	}))
-	mux.Handle("/oic/rd", coap.HandlerFunc(func(s coap.ResponseWriter, req *coap.Request) {
-		validateCommandCode(s, req, oicRdHandler)
+	mux.Handle(oicrd, coap.HandlerFunc(func(s coap.ResponseWriter, req *coap.Request) {
+		validateCommandCode(s, req, server, oicRdHandler)
 	}))
 	mux.Handle("/oic/sec/account", coap.HandlerFunc(func(s coap.ResponseWriter, req *coap.Request) {
-		validateCommandCode(s, req, oicSecAccountHandler)
+		validateCommandCode(s, req, server, oicSecAccountHandler)
 	}))
 	mux.Handle("oic/sec/session", coap.HandlerFunc(func(s coap.ResponseWriter, req *coap.Request) {
-		validateCommandCode(s, req, oicSecSessionHandler)
+		validateCommandCode(s, req, server, oicSecSessionHandler)
 	}))
 
 	return &coap.Server{
@@ -227,10 +229,10 @@ func (server *Server) NewCoapServer() *coap.Server {
 		TLSConfig: server.TLSConfig,
 		Handler:   mux,
 		NotifySessionNewFunc: func(s *coap.ClientCommander) {
-			clientContainer.add(server, s)
+			server.clientContainer.add(server, s)
 		},
 		NotifySessionEndFunc: func(s *coap.ClientCommander, err error) {
-			clientContainer.remove(s)
+			server.clientContainer.remove(s)
 		},
 	}
 }

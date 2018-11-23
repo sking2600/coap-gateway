@@ -5,7 +5,7 @@ import (
 	"github.com/ugorji/go/codec"
 )
 
-func oicSecAccountHandler(s coap.ResponseWriter, req *coap.Request) {
+func oicSecAccountHandler(s coap.ResponseWriter, req *coap.Request, server *Server) {
 	m := map[string]interface{}{
 		"uid":         "00000000-0000-0000-0000-000000000000",
 		"accesstoken": "abc",
