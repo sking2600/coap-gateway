@@ -1,0 +1,11 @@
+SQL queries need to  be made transactions 
+need to set up oauth 
+utilize redis more for caching
+implement resource discovery (GET /oic/res/)
+verify correctness of all HTTP/response response codes
+graceful shutdown
+    utilization of context.Context
+better verification/auth in registry
+migrate to postgresql?
+set up configurations better (ex: keepalive time)
+coap load balancing (aka release/abort messages)
