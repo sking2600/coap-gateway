@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: client-interface
+  labels: 
+    app: dev
+spec:
+  selector:
+    matchLabels:
+      app: client-interface
+  template:
+    metadata:
+      labels:
+        app: client-interface
+    spec:
+      containers:
+      - name: client-interface
+        image: docker.io/ocfcloud/client-interface:latest
+        ports:
+        - containerPort: 8080
+        resources:
+          limits:
+            memory: "1Gi"
+            cpu: 200m
+        env:
+        - name: CACHE_URI
+          value: "redis-15564.c1.us-central1-2.gce.cloud.redislabs.com:15564"
+        - name: CACHE_PASSWORD
+          value: "ocfftw"
+        - name: DB_USERNAME
+          value: "ocf_test"
+        - name: DB_PASSWORD
+          value: "ocfftw!!"
+        - name: DB_NAME
+          value: "ocf_test"
+        - name: DB_URI
+          value: "@tcp(db4free.net:3306)/"
+        - name: DB_PARAMETERS
+          value: "?parseTime=true"
+        
+      

@@ -16,7 +16,7 @@ import (
 
 func testCreateCoapGateway(t *testing.T) (*coap.Server, string, chan error, error) {
 
-	server, err := NewServer()
+	server, err := NewServer(MysqlRedisRegistry{})
 	if err != nil {
 		return nil, "", nil, err
 	}
@@ -117,7 +117,7 @@ func TestSetupServer(t *testing.T) {
 	os.Setenv(envListenAddress, address)
 	os.Setenv(envListenNet, network)
 
-	s, err := NewServer()
+	s, err := NewServer(MysqlRedisRegistry{})
 	if err != nil {
 		t.Fatalf("cannot create server: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestSetupTLSServer(t *testing.T) {
 
 	testSetupTLS(t, dir)
 
-	_, err = NewServer()
+	_, err = NewServer(MysqlRedisRegistry{})
 	if err != nil {
 		t.Fatalf("cannot create server: %v", err)
 	}

@@ -1,0 +1,18 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: client-interface
+  labels:
+    app: dev
+spec:
+  selector:
+    app: client-interface
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+  type: LoadBalancer
+  #docs say that GCE LB requires NodePort instead of LoadBalancer but I may have misintpretted it
+
+

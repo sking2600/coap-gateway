@@ -6,14 +6,55 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"io/ioutil"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/sking2600/coap-gateway/pkg/registry"
 
 	"github.com/go-ocf/go-coap"
 )
+
+//TODO need to more explicitly state in docs that you need to feed in environmental variables
+//TODO call out in docs that default listening port is 5684
+
+//Session a setup of connection
+type Session struct {
+	server    *Server
+	client    *coap.ClientCommander
+	keepalive *Keepalive
+}
+
+type ClientContainer struct {
+	sessions map[string]*Session
+	mutex    sync.Mutex
+}
+
+func (c *ClientContainer) addSession(server *Server, client *coap.ClientCommander) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	c.sessions[client.LocalAddr().String()] = NewSession(server, client)
+}
+
+func (c *ClientContainer) removeSession(s *coap.ClientCommander) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	c.sessions[s.LocalAddr().String()].keepalive.Done()
+	delete(c.sessions, s.LocalAddr().String())
+}
+
+var (
+	clientContainer = &ClientContainer{sessions: make(map[string]*Session)}
+)
+
+//NewSession create and initialize session
+func NewSession(server *Server, client *coap.ClientCommander) *Session {
+	return &Session{server: server, client: client, keepalive: NewKeepalive(server, client)}
+}
 
 //Server a configuration of coapgateway
 type Server struct {
@@ -23,8 +64,7 @@ type Server struct {
 	keepaliveTime     time.Duration // the duration in seconds between two keepalive transmissions in idle condition. TCP keepalive period is required to be configurable and by default is set to 1 hour.
 	keepaliveInterval time.Duration // the duration in seconds between two successive keepalive retransmissions, if acknowledgement to the previous keepalive transmission is not received.
 	keepaliveRetry    int           // the number of retransmissions to be carried out before declaring that remote end is not available.
-
-	clientContainer *ClientContainer
+	db                registry.Registry
 }
 
 func setupTLS() (*tls.Config, error) {
@@ -69,31 +109,31 @@ func setupTLS() (*tls.Config, error) {
 		if info.Mode().IsRegular() {
 			certPEMBlock, err := ioutil.ReadFile(path)
 			if err != nil {
-				log.Errorf("Cannot read file '%v': %v", path, err)
+				log.Printf("Cannot read file '%v': %v", path, err)
 				return nil
 			}
 			certDERBlock, _ := pem.Decode(certPEMBlock)
 			if certDERBlock == nil {
-				log.Errorf("Cannot decode der block '%v'", path)
+				log.Printf("Cannot decode der block '%v'", path)
 				return nil
 			}
 			if certDERBlock.Type != "CERTIFICATE" {
-				log.Errorf("DER block is not certificate '%v'", path)
+				log.Printf("DER block is not certificate '%v'", path)
 				return nil
 			}
 			caCert, err := x509.ParseCertificate(certDERBlock.Bytes)
 			if err != nil {
-				log.Errorf("Cannot parse certificate '%v': %v", path, err)
+				log.Printf("Cannot parse certificate '%v': %v", path, err)
 				return nil
 			}
 			if bytes.Compare(caCert.RawIssuer, caCert.RawSubject) == 0 && caCert.IsCA {
-				log.Infof("Adding root certificate '%v'", path)
+				log.Printf("Adding root certificate '%v'", path)
 				caRootPool.AddCert(caCert)
 			} else if caCert.IsCA {
-				log.Infof("Adding intermediate certificate '%v'", path)
+				log.Printf("Adding intermediate certificate '%v'", path)
 				caIntermediatesPool.AddCert(caCert)
 			} else {
-				log.Warnf("Ignoring certificate '%v'", path)
+				log.Printf("Ignoring certificate '%v'", path)
 			}
 		}
 		return nil
@@ -136,8 +176,8 @@ func setupTLS() (*tls.Config, error) {
 }
 
 //NewServer setup coap gateway
-func NewServer() (*Server, error) {
-	s := Server{keepaliveTime: time.Hour, keepaliveInterval: time.Second * 5, keepaliveRetry: 5, Net: "tcp", Addr: "0.0.0.0:5684", clientContainer: &ClientContainer{sessions: make(map[string]*Session)}}
+func NewServer(db registry.Registry) (*Server, error) {
+	s := &Server{keepaliveTime: time.Hour, keepaliveInterval: time.Second * 5, keepaliveRetry: 5, Net: "tcp", Addr: "0.0.0.0:5684", db: db}
 
 	//load env variables
 	var keepaliveTime *int
@@ -152,7 +192,7 @@ func NewServer() (*Server, error) {
 		case envKeepaliveTime, envKeepaliveInterval, envKeepaliveRetry:
 			val, err := strconv.Atoi(pair[1])
 			if err != nil {
-				log.Errorf("Invalid value '%v' of env variable '%v: %v'", key, pair[1], err)
+				log.Printf("Invalid value '%v' of env variable '%v: %v'", key, pair[1], err)
 			}
 			switch key {
 			case envKeepaliveTime:
@@ -192,36 +232,17 @@ func NewServer() (*Server, error) {
 		}
 	}
 
-	return &s, nil
-}
-
-func validateCommandCode(s coap.ResponseWriter, req *coap.Request, server *Server, fnc func(s coap.ResponseWriter, req *coap.Request, server *Server)) {
-	decodeMsgToDebug(req.Msg, "MESSAGE_FROM_CLIENT")
-	switch req.Msg.Code() {
-	case coap.POST, coap.DELETE, coap.PUT, coap.GET:
-		fnc(s, req, server)
-	case coap.Content:
-		log.Infof("Unpaired message received from %v", req.Client.RemoteAddr())
-	default:
-		log.Errorf("Invalid code received %v from %v", req.Msg.Code(), req.Client.RemoteAddr())
-	}
+	return s, nil
 }
 
 //NewCoapServer setup coap server
 func (server *Server) NewCoapServer() *coap.Server {
 	mux := coap.NewServeMux()
-	mux.DefaultHandle(coap.HandlerFunc(func(s coap.ResponseWriter, req *coap.Request) {
-		validateCommandCode(s, req, server, defaultHandler)
-	}))
-	mux.Handle(oicRd, coap.HandlerFunc(func(s coap.ResponseWriter, req *coap.Request) {
-		validateCommandCode(s, req, server, oicRdHandler)
-	}))
-	mux.Handle(oicSecAccount, coap.HandlerFunc(func(s coap.ResponseWriter, req *coap.Request) {
-		validateCommandCode(s, req, server, oicSecAccountHandler)
-	}))
-	mux.Handle(oicSecSession, coap.HandlerFunc(func(s coap.ResponseWriter, req *coap.Request) {
-		validateCommandCode(s, req, server, oicSecSessionHandler)
-	}))
+	//mux.DefaultHandle(coap.HandlerFunc(DefaultHandler))
+	mux.Handle("/oic/sec/account", coap.HandlerFunc(handleAccountUpdateOrDelete(server.db)))
+	mux.Handle("oic/sec/session", coap.HandlerFunc(handleSessionUpdate(server.db)))
+	mux.Handle("oic/rd", coap.HandlerFunc(handleRDUpdate(server.db)))
+	mux.Handle("oic/sec/tokenrefresh", coap.HandlerFunc(handleTokenRefresh(server.db)))
 
 	return &coap.Server{
 		Net:       server.Net,
@@ -229,10 +250,10 @@ func (server *Server) NewCoapServer() *coap.Server {
 		TLSConfig: server.TLSConfig,
 		Handler:   mux,
 		NotifySessionNewFunc: func(s *coap.ClientCommander) {
-			server.clientContainer.add(server, s)
+			clientContainer.addSession(server, s)
 		},
 		NotifySessionEndFunc: func(s *coap.ClientCommander, err error) {
-			server.clientContainer.remove(s)
+			clientContainer.removeSession(s)
 		},
 	}
 }

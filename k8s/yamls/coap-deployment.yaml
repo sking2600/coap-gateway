@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coap-app
+  labels: 
+    app: dev
+spec:
+  selector:
+    matchLabels:
+      app: coap-interface
+  template:
+    metadata:
+      labels:
+        app: coap-interface
+    spec:
+      containers:
+      - name: coap-interface
+        image: docker.io/ocfcloud/coap-interface:latest
+        ports:
+        - containerPort: 8080
+        - containerPort: 5684
+        resources:
+          limits:
+            memory: "1Gi"
+            cpu: 200m
+        env:
+        - name: MY_POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: CACHE_URI
+          value: "redis-15564.c1.us-central1-2.gce.cloud.redislabs.com:15564"
+        - name: CACHE_PASSWORD
+          value: "ocfftw"
+        - name: DB_USERNAME
+          value: "ocf_test"
+        - name: DB_PASSWORD
+          value: "ocfftw!!"
+        - name: DB_NAME
+          value: "ocf_test"
+        - name: DB_URI
+          value: "@tcp(db4free.net:3306)/"
+        - name: DB_PARAMETERS
+          value: "?parseTime=true"
+        
+      
