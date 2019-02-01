@@ -297,6 +297,16 @@ func (db MysqlRedisRegistry) DeleteUser(ctx context.Context, userID string) erro
 //TODO do I need a "logged in" field in my device table or can I leave that up to redis?
 func (db MysqlRedisRegistry) UpdateSession(deviceID, userID, accessToken, podAddr string, loggedIn bool) (int, error) {
 	//mysql> SELECT UNIX_TIMESTAMP(expires_in) -UNIX_TIMESTAMP(NOW()) TIME FROM token INNER JOIN device ON token.token_id = device.token_id WHERE device.device_uuid = ?;
+	if !loggedIn {
+
+		err := db.Set(deviceID, unspecifiedAddress, time.Hour*0).Err()
+		if err != nil {
+			return 0, err
+		}
+		return 0, err
+
+	}
+
 	row := db.QueryRowContext(context.TODO(), "SELECT UNIX_TIMESTAMP(expires_in) -UNIX_TIMESTAMP(NOW()) TIME FROM token INNER JOIN device ON token.token_id = device.token_id WHERE device.device_uuid = ?;", deviceID)
 	var expiresIn sql.NullInt64
 	log.Println("in registry.updatesession. deviceID: ", deviceID)
@@ -309,20 +319,13 @@ func (db MysqlRedisRegistry) UpdateSession(deviceID, userID, accessToken, podAdd
 		fmt.Println("no TTL value found") //TODO chances are if no TTL value was found, the device is provisioned but not registered
 		return 0, err
 	}
-	if loggedIn {
-		fmt.Println("in updateSession. about to SET redis db with deviceID: ", deviceID)
-		err := db.Set(deviceID, podAddr, time.Hour).Err() //TODO handle response in case it's an error
-		if err != nil {
-			return 0, err
-		}
-		return int(expiresIn.Int64), err
-	} else {
-		err = db.Set(deviceID, unspecifiedAddress, time.Hour*0).Err()
-		if err != nil {
-			return 0, err
-		}
-		return int(expiresIn.Int64), err
+
+	fmt.Println("in updateSession. about to SET redis db with deviceID: ", deviceID)
+	err = db.Set(deviceID, podAddr, time.Hour).Err() //TODO handle response in case it's an error
+	if err != nil {
+		return 0, err
 	}
+	return int(expiresIn.Int64), err
 
 }
 

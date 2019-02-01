@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"log"
-	"os"
 	"strings"
 
 	coap "github.com/go-ocf/go-coap"
@@ -66,8 +65,6 @@ var (
 		Policy:       Bitmask{Value: 3},
 		Endpoints:    []Endpoint{Endpoint{URI: "coaps://[fe80::b1d6]:22222"}},
 	}
-
-	resourceStruct = ResourcePublication{DeviceID: os.Args[3], Links: []Link{myLink}}
 )
 
 type Account struct {
@@ -108,22 +105,48 @@ type Endpoint struct {
 }
 
 func main() {
-	address := os.Args[1]
-	if address == "" {
-		address = "localhost"
-	}
-	userID := os.Args[2]
-	if userID == "" {
-		panic("userID is nil")
-	}
-	deviceID := os.Args[3]
-	if deviceID == "" {
-		panic("deviceID is nil")
-	}
-	token := os.Args[4]
-	if token == "" {
-		panic("token is nil")
-	}
+	var address string
+	var userID string
+	var deviceID string
+	var accessToken string
+	var mediatedToken string
+	var refreshToken string
+	/*
+		if len(os.Args) == 5 {
+			address = os.Args[1]
+			if address == "" {
+
+				address = "localhost"
+			}
+			userID = os.Args[2]
+			if userID == "" {
+				panic("userID is nil")
+			}
+			deviceID = os.Args[3]
+			if deviceID == "" {
+				panic("deviceID is nil")
+			}
+			token := os.Args[4]
+			if token == "" {
+				panic("token is nil")
+			}
+		}
+	*/
+	//(TODO get those env vars from stdin only as a fallback?)
+
+	fmt.Println("what is your target address?")
+	fmt.Scanln(&address)
+	fmt.Println("what is the user ID?: ")
+	fmt.Scanln(&userID)
+	fmt.Println("what is the device ID?: ")
+	fmt.Scanln(&deviceID)
+	fmt.Println("what is the access token?: ")
+	fmt.Scanln(&accessToken)
+	fmt.Println("what is the mediatedToken? (aka one-time-use access token)")
+	fmt.Scanln(&mediatedToken)
+	fmt.Println("what is the refresh token?")
+	fmt.Scanln(&refreshToken)
+
 	fmt.Println("dialing server")
 	client := coap.Client{Net: "tcp", Handler: coap.HandlerFunc(logHandler)} //DialTimeout: 10 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, SyncTimeout: 10 * time.Second}
 	if !strings.Contains(address, ":") {
@@ -131,55 +154,28 @@ func main() {
 	}
 	conn, err := client.Dial(address)
 	if err != nil {
-		log.Fatal("err dialing localhost: ", err)
+		log.Fatal("err dialing ", address, ": ", err)
 	}
 	fmt.Println("dialed server")
-
-	body, err := Account{DeviceID: deviceID, AccessToken: token, UserID: userID, LoggedIn: true}.MarshalCBOR()
-	if err != nil {
-		log.Println("error marshalling session request to CBOR: ", err)
-	}
-	msg, err := conn.NewPostRequest("oic/sec/account", coap.AppOcfCbor, bytes.NewBuffer(body))
-	if err != nil {
-		fmt.Println("err from creating newPostRequest: ", err)
-		return
-	}
-	fmt.Println("about to exchange with oic/sec/account")
-	//not trying to test this handler right now
-	m, err := conn.Exchange(msg)
-	if err != nil {
-		fmt.Println("error from exchanging message: ", err)
-	}
-	fmt.Println("exchanged")
-
-	fmt.Println("payload is ", len(m.Payload()), " bytes long")
-	decodeMsg(m, "response from POST oic/sec/account")
-
-	msg, err = conn.NewPostRequest("oic/sec/session", coap.AppOcfCbor, bytes.NewBuffer(body))
-	fmt.Println("about to exchange with oic/sec/session")
-	m, err = conn.Exchange(msg)
-	fmt.Println("exchanged")
-
-	fmt.Println("payload is ", len(m.Payload()), " bytes long")
-	decodeMsg(m, "response from POST oic/sec/account")
-	resource := resourceStruct
-	buf := new(bytes.Buffer)
-	h := new(codec.CborHandle)
-	h.BasicHandle.Canonical = true
-	enc := codec.NewEncoder(buf, h)
-	err = enc.Encode(resource)
-	msg, err = conn.NewPostRequest("oic/rd", coap.AppOcfCbor, buf)
-	if err != nil {
-		log.Println("err from creating new post request: ", err)
-	}
-	fmt.Println("about to exchange resource publication with oic/rd")
-	message, err := conn.Exchange(msg)
-	if err != nil {
-		log.Println("err from publishing resources", err)
-	}
-	fmt.Println("response code for resource publication was: ", message.Code())
-
+	go promptUser(deviceID, accessToken, userID, conn)
 	select {}
+}
+
+func promptUser(deviceID, accessToken, userID string, conn *coap.ClientConn) {
+	fmt.Println("what do you want to do? You can register with the server using a mediated token, establish a session or publish resources (non-configurable payload)\nOptions: register, session, publish")
+	var input string
+	fmt.Scanln(&input)
+	switch input {
+	case "register":
+		registerDevice(deviceID, accessToken, userID, true, conn)
+	case "session":
+		startSession(deviceID, accessToken, userID, true, conn)
+	case "publish":
+		publishResource(deviceID, accessToken, userID, conn)
+	default:
+		fmt.Println("invalid input. please type \"register\" or \"session\" or \"publish\"")
+
+	}
 }
 
 func decodeMsg(resp coap.Message, tag string) {
@@ -204,7 +200,7 @@ func decodeMsg(resp coap.Message, tag string) {
 
 func logHandler(w coap.ResponseWriter, r *coap.Request) {
 	//decodeMsg(r.Msg, "request from cloud")
-	fmt.Println("request from cloud:\n", "payloadLength: ", len(r.Msg.Payload()[:]), "\npayload: ", string(r.Msg.Payload()[:]), "\nhref: ", r.Msg.PathString())
+	log.Println("request from cloud:\n", "payloadLength: ", len(r.Msg.Payload()[:]), "\npayload: ", string(r.Msg.Payload()[:]), "\nhref: ", r.Msg.PathString())
 	if len(r.Msg.Payload()[:]) == 0 {
 		panic("response payload is 0. this is prob an infinite loop")
 	}
@@ -272,4 +268,66 @@ func UnmarshalCBOR(b []byte) (Account, error) {
 		return Account{}, err
 	}
 	return a, err
+}
+
+func registerDevice(deviceID, accessToken, userID string, loggedIn bool, conn *coap.ClientConn) {
+	fmt.Println("in registerDevice stub")
+	body, err := Account{DeviceID: deviceID, AccessToken: accessToken, UserID: userID, LoggedIn: true}.MarshalCBOR()
+	if err != nil {
+		log.Println("error marshalling session request to CBOR: ", err)
+	}
+	msg, err := conn.NewPostRequest("oic/sec/account", coap.AppOcfCbor, bytes.NewBuffer(body))
+	if err != nil {
+		fmt.Println("err from creating newPostRequest: ", err)
+		return
+	}
+	fmt.Println("about to exchange with oic/sec/account")
+	//not trying to test this handler right now
+	m, err := conn.Exchange(msg)
+	if err != nil {
+		fmt.Println("error from exchanging message: ", err)
+	}
+	fmt.Println("exchanged")
+
+	fmt.Println("payload is ", len(m.Payload()), " bytes long")
+	decodeMsg(m, "response from POST oic/sec/account")
+	promptUser(deviceID, accessToken, userID, conn)
+}
+
+func startSession(deviceID, accessToken, userID string, loggedIn bool, conn *coap.ClientConn) {
+	//fmt.Println("do you want to log in or out? (respond with 'in' or 'out'")
+
+	body, err := Account{DeviceID: deviceID, AccessToken: accessToken, UserID: userID, LoggedIn: loggedIn}.MarshalCBOR()
+	msg, err := conn.NewPostRequest("oic/sec/session", coap.AppOcfCbor, bytes.NewBuffer(body))
+	fmt.Println("about to exchange with oic/sec/session")
+	m, err := conn.Exchange(msg)
+	if err != nil {
+		fmt.Println("err from exchanging message to initiate session: ", err)
+	}
+	fmt.Println("exchanged")
+
+	fmt.Println("payload is ", len(m.Payload()), " bytes long")
+	decodeMsg(m, "response from POST oic/sec/account")
+	promptUser(deviceID, accessToken, userID, conn)
+}
+
+func publishResource(deviceID, accessToken, userID string, conn *coap.ClientConn) {
+	fmt.Println("in publishResource stub")
+	resource := ResourcePublication{DeviceID: deviceID, Links: []Link{myLink}}
+	buf := new(bytes.Buffer)
+	h := new(codec.CborHandle)
+	h.BasicHandle.Canonical = true
+	enc := codec.NewEncoder(buf, h)
+	err := enc.Encode(resource)
+	msg, err := conn.NewPostRequest("oic/rd", coap.AppOcfCbor, buf)
+	if err != nil {
+		log.Println("err from creating new post request: ", err)
+	}
+	fmt.Println("about to exchange resource publication with oic/rd")
+	message, err := conn.Exchange(msg)
+	if err != nil {
+		log.Println("err from publishing resources", err)
+	}
+	fmt.Println("response code for resource publication was: ", message.Code())
+	promptUser(deviceID, accessToken, userID, conn)
 }

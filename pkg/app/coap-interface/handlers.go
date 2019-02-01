@@ -242,6 +242,7 @@ func handleSessionUpdate(db registry.Registry) func(coap.ResponseWriter, *coap.R
 			deviceContainer.addDevice(a.DeviceID, req.Client)
 			return
 		}
+		log.Println("recieved request to /oic/sec/session with loggedin=false")
 		deviceContainer.removeDevice(a.DeviceID)
 		res := w.NewResponse(coap.Changed)
 		//TODO should I be setting any payload on this response?

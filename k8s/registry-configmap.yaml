@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: registry-configmap
+data:
+  CACHE_URI: "redis-15564.c1.us-central1-2.gce.cloud.redislabs.com:15564"
+  CACHE_PASSWORD: "ocfftw"
+  DB_USERNAME: "ocf_test"
+  DB_PASSWORD: "ocfftw!!"
+  DB_NAME: "ocf_test"
+  DB_URI: "@tcp(db4free.net:3306)/"

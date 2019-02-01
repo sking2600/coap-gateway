@@ -29,18 +29,33 @@ spec:
             fieldRef:
               fieldPath: status.podIP
         - name: CACHE_URI
-          value: "redis-15564.c1.us-central1-2.gce.cloud.redislabs.com:15564"
+          valueFrom:
+            configMapKeyRef:
+              name: registry-configmap
+              key: CACHE_URI
         - name: CACHE_PASSWORD
-          value: "ocfftw"
+          valueFrom:
+            configMapKeyRef:
+              name: registry-configmap
+              key: CACHE_PASSWORD
         - name: DB_USERNAME
-          value: "ocf_test"
+          valueFrom:
+            configMapKeyRef:
+              name: registry-configmap
+              key: DB_USERNAME
         - name: DB_PASSWORD
-          value: "ocfftw!!"
+          valueFrom: 
+            configMapKeyRef:
+              name: registry-configmap
+              key: DB_PASSWORD
         - name: DB_NAME
-          value: "ocf_test"
+          valueFrom:
+            configMapKeyRef:
+              name: registry-configmap
+              key: DB_NAME
         - name: DB_URI
-          value: "@tcp(db4free.net:3306)/"
-        - name: DB_PARAMETERS
-          value: "?parseTime=true"
-        
+          valueFrom:
+            configMapKeyRef:
+              name: registry-configmap
+              key: DB_URI
       

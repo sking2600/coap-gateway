@@ -1,0 +1,19 @@
+I'm just trying to keep a running list of edge casess that need to be confirmed/accounted for before this app is production ready:
+
+
+provided tokens are invalid (should I differentiate between expired and incorrect?)
+coap server times out or is otherwise unavailable
+redis has incorrect pod IP for that specific device
+    device-side failure: how do I detect that? surely there needs to be some configurability for this
+how to handle ungraceful shutdown of coap server    
+    need to clear out stale entries in redis (this has implications on db design)
+    do I need a daemon set to come in after the fact for graceful shutdown? what about for node failures?
+malformed request payload
+
+how to handle load balancing for coap server?
+    how does coap server know when to shed load
+        how to determine which load to shed? truly random, weighted random based on age of connection? strictly based on age of connection?
+    how does coap server know when to start ignoring readiness checks?
+        LIFO queue?
+    what SLI's are most important?
+    

@@ -22,17 +22,25 @@ import (
 //TODO: do I need to worry about congestion control stuff? (RFC 7252 sec 4.2, 4.7-4.8)
 
 type dbconfig struct {
-	dbName        string `envconfig:"DB_NAME required:"true"`
+	dbName        string `envconfig:"DB_NAME" required:"true"`
 	dbUsername    string `envconfig:"DB_USERNAME" required:"true"`
 	dbPassword    string `envconfig:"DB_PASSWORD" required:"true"`
 	dbAddress     string `envconfig:"DB_URI" required:"true"`
 	redisPassword string `envconfig:"CACHE_PASSWORD" required:"true"`
 	redisAddress  string `envconfig:"CACHE_URI" required:"true"`
-	redisNumber   int    `envconfig:"CACHE_NUMBER" default:0"`
+	redisNumber   int    `envconfig:"CACHE_NUMBER" ` //this line is what's causing envconfig to fail. if I just want my default val to be 0. can I just use the 0 val and not set a default?
 }
 
 //constants
 var (
+	dbName        = os.Getenv("DB_NAME")
+	dbUsername    = os.Getenv("DB_USERNAME")
+	dbPassword    = os.Getenv("DB_PASSWORD")
+	dbAddress     = os.Getenv("DB_URI")
+	redisPassword = os.Getenv("CACHE_PASSWORD")
+	redisAddress  = os.Getenv("CACHE_URI")
+	redisNumber   = os.Getenv("CACHE_NUMBER")
+
 	envKeepaliveTime     = "KEEPALIVE_TIME"
 	envKeepaliveInterval = "KEEPALIVE_INTERVAL"
 	envKeepaliveRetry    = "KEEPALIVE_RETRY"
@@ -42,7 +50,7 @@ var (
 	envTLSCertificateKey = "TLS_CERTIFICATE_KEY"
 	envTLSCAPool         = "TLS_CA_POOL"
 
-	tokenEntropy   = 32   //the actual tokens will be longer due to base64 encoding
+	tokenEntropy   = 32   //measuring in bytes, not bits (ie: I want 256 bits of entropy) the actual tokens will be longer due to base64 encoding
 	accessTokenTTL = 6000 //TTL is seconds. TODO: make this configurable
 
 	podAddr = os.Getenv("MY_POD_IP") //TODO I should probably have a default value like "missing pod IP" to make debugging easier
@@ -57,11 +65,15 @@ func main() {
 		log.Fatal(err.Error())
 	}
 	dbURI := fmt.Sprintf("%s:%s%s%s?parseTime=true", dbc.dbUsername, dbc.dbPassword, dbc.dbAddress, dbc.dbName)
+	log.Println("db URI using envconfig: ", dbURI)
+	dbURI = fmt.Sprintf("%s:%s%s%s?parseTime=true", dbUsername, dbPassword, dbAddress, dbName)
+	log.Println("db URI using os.getenv: ", dbURI)
 	if podAddr == "" {
 		log.Println("no pod IP provided in env. setting podAddr to 'localhost'")
 		podAddr = "localhost"
 
 	}
+	log.Println("dbURI: ", dbURI)
 	//fmt.Println(dbURI)
 	db, err := sql.Open("mysql", dbURI)
 	if err != nil {
@@ -69,11 +81,11 @@ func main() {
 	}
 	err = db.Ping()
 	if err != nil {
-		panic(fmt.Sprint("error from pinging mysql: ", err))
+		log.Fatal("error from pinging mysql: ", err)
 	}
 	redisdb := redis.NewClient(&redis.Options{
-		Addr:     dbc.redisAddress,
-		Password: dbc.redisPassword,
+		Addr:     redisAddress,
+		Password: redisPassword,
 		DB:       0,
 	})
 	fmt.Println("created registry")

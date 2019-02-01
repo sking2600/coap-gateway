@@ -58,13 +58,13 @@ type Account struct {
 }
 
 type dbconfig struct {
-	dbName        string `envconfig:"DB_NAME required:"true"`
+	dbName        string `envconfig:"DB_NAME" required:"true"`
 	dbUsername    string `envconfig:"DB_USERNAME" required:"true"`
 	dbPassword    string `envconfig:"DB_PASSWORD" required:"true"`
 	dbAddress     string `envconfig:"DB_URI" required:"true"`
 	redisPassword string `envconfig:"CACHE_PASSWORD" required:"true"`
 	redisAddress  string `envconfig:"CACHE_URI" required:"true"`
-	redisNumber   int    `envconfig:"CACHE_NUMBER" default:0"`
+	redisNumber   int    `envconfig:"CACHE_NUMBER" default:"0"`
 }
 
 var (
@@ -93,7 +93,10 @@ func main() {
 		DB:       dbc.redisNumber,
 	})
 	db := registry.MysqlRedisRegistry{sql, redisdb}
-	db.Ping()
+	err = db.Ping()
+	if err != nil {
+		log.Fatal("err pinging sql db: ", err)
+	}
 	fmt.Println("db connection successful")
 	router := bone.New()
 	router.Post("/register/user", http.HandlerFunc(handleRegisterUser(db)))
@@ -279,6 +282,8 @@ func handleProvisionDevice(db registry.Registry) func(w http.ResponseWriter, r *
 func handleClientRequest(db registry.Registry) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		//todo: verify access token in relation to deviceUUID
+		accessToken := r.Header.Get("Authorization")
+		fmt.Println("todo: verify that the access token authorizes the client to control this device\naccessToken: ", accessToken)
 		deviceUUID := bone.GetValue(r, "deviceUUID")
 		href := bone.GetValue(r, "href")
 		b, err := ioutil.ReadAll(r.Body)

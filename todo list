@@ -8,6 +8,45 @@ graceful shutdown
 better verification/auth in registry
 migrate to postgresql?
 set up configurations better (ex: keepalive time)
+    support ping/pong
 coap load balancing (aka release/abort messages)
 clean up logging
 utilize kelseyhightower/envconfig
+load TLS certs/etc from mounted file directories
+check that device has established a session with oic/sec/session before handling certain requests
+support OBSERVE/NOTIFY request/responses 
+
+
+clean up config
+more tests
+use gRPC for inter-service communication (and maybe optionally for clients?)
+get agreement on port selection
+improve registry implementation (ex: transactions, verifying tokens, etc)
+my random strings always seem to end in "="
+use go modules
+should I use the "Authorization" header for anything? or just put all tokens in the payload
+return various error codes that signify db issues (ex: duplicate entries, missing parameters, etc)
+make clearer naming for various token types (currently they're all in the "accesstoken" field)
+ensure all content types are correct (currently JSON responses say they're text/plain rather than application/json)
+don't use the "Account" type as a catch all for marshalling/unmarshalling
+
+
+idea for redis schema: 
+users
+    mediator-token
+        permissions?
+    clients
+        accesstoken
+        refreshtoken
+        permissions?
+    devices
+        pod-ip 
+        shadow
+        accesstoken
+        refreshtoken
+        
+
+comments:
+always check redis first, and then check sql if the token is different or missing?
+uses sets, not hashes because it must support multiples
+can efficiently check for token presence with SISMEMBER users:clients:accesstoken <accesstoken>
